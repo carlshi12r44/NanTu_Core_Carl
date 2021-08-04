@@ -1,8 +1,9 @@
 import intercepts
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn import datasets, linear_model
+from sklearn import datasets, linear_model, svm
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 import pickle
 import base64
 import json
@@ -15,6 +16,7 @@ from sklearn import metrics
 from sklearn.metrics import average_precision_score, mean_squared_error, r2_score
 import inspect
 from util import _log_pretraining_metadata, _log_posttraining_metadata
+from sklearn.cluster import KMeans
 
 _logger = logging.getLogger(__name__)
 
@@ -157,31 +159,60 @@ def _send_model_to_ntcore(estimator, framework, parameters, metrics):
     except ConnectionError as connectionError:
          _logger.warning('This experiment is not logged in ntcore server because ntcore server is not running.')
 
-
-if __name__=="__main__":
-    set_workspace_id("CEII4VPOFNA164BVT3JYZWDUBK")
-    ## example of sklearn https://scikit-learn.org/stable/auto_examples/linear_model/plot_ols.html
-    diabetes_X, diabetes_y = datasets.load_diabetes(return_X_y=True)
-    # Use only one feature
-    diabetes_X = diabetes_X[:, np.newaxis, 2]
-
-    # Split the data into training/testing sets
-    diabetes_X_train = diabetes_X[:-20]
-    diabetes_X_test = diabetes_X[-20:]
-    
-    # Split the targets into training/testing sets
-    diabetes_y_train = diabetes_y[:-20]
-    diabetes_y_test = diabetes_y[-20:]
-
-    # Create linear regression object
-    regr = linear_model.LinearRegression()
-    # register through intercepts 
-    intercepts.register(regr.fit, handler)
-    # Train the model using the training sets (New Handler version)
-    model_parameters = regr.fit(diabetes_X_train, diabetes_y_train)
-    # metrics after training
-    _metrics = _log_posttraining_metadata(regr, diabetes_X_train, diabetes_y_train)
-    # make the post request (See createExperimentV1) TODO
-    _send_model_to_ntcore(regr, os.environ["FRAMEWORK"], model_parameters, _metrics)
- 
+def main(estimator, workspace_id, X_train, y_train):
+    """
+    main driver function
+    """
+    set_workspace_id(workspace_id)
+    intercepts.register(estimator.fit, handler)
+    model_parameters = estimator.fit(X_train, y_train)
+    _metrics = _log_posttraining_metadata(estimator, X_train, y_train)
+    _send_model_to_ntcore(estimator, os.environ["FRAMEWORK"], model_parameters, _metrics)
     intercepts.unregister_all()
+if __name__=="__main__":
+    # set_workspace_id("CEII4VPOFNA164BVT3JYZWDUBK")
+    # ## example of sklearn https://scikit-learn.org/stable/auto_examples/linear_model/plot_ols.html
+    # diabetes_X, diabetes_y = datasets.load_diabetes(return_X_y=True)
+    # # Use only one feature
+    # diabetes_X = diabetes_X[:, np.newaxis, 2]
+
+    # # Split the data into training/testing sets
+    # diabetes_X_train = diabetes_X[:-20]
+    # diabetes_X_test = diabetes_X[-20:]
+    
+    # # Split the targets into training/testing sets
+    # diabetes_y_train = diabetes_y[:-20]
+    # diabetes_y_test = diabetes_y[-20:]
+
+    # # Create linear regression object
+    # regr = linear_model.LinearRegression()
+    # # register through intercepts 
+    # intercepts.register(regr.fit, handler)
+    # # Train the model using the training sets (New Handler version)
+    # model_parameters = regr.fit(diabetes_X_train, diabetes_y_train)
+    # # metrics after training
+    # _metrics = _log_posttraining_metadata(regr, diabetes_X_train, diabetes_y_train)
+    # # make the post request (See createExperimentV1)
+    # _send_model_to_ntcore(regr, os.environ["FRAMEWORK"], model_parameters, _metrics)
+ 
+    # ## example of sklearn classification https://scikit-learn.org/stable/auto_examples/classification/plot_digits_classification.html#sphx-glr-auto-examples-classification-plot-digits-classification-py
+    # ## this example failed due to request entity too large
+    # digits = datasets.load_digits()
+    # # flatten the images
+    # n_samples = len(digits.images)
+    # data = digits.images.reshape((n_samples, -1))
+    # # Create a classifier: a support vector classifier
+    # clf = svm.SVC(gamma=0.001)
+    # # Split data into 50% train and 50% test subsets
+    # X_train, X_test, y_train, y_test = train_test_split(
+    # data, digits.target, test_size=0.5, shuffle=False)
+    
+    # main(clf, "CEII4VPOFNA164BVT3JYZWDUBK", X_train, y_train)
+
+    ## example for clustering
+    iris_data = datasets.load_iris()
+    X = iris_data.data
+    y = iris_data.target
+    kMeans_estimator = KMeans(n_clusters=8)
+    X_train, X_test,y_train, y_test = train_test_split(X, y, test_size=0.3, shuffle=False)
+    main(kMeans_estimator, "CEII4VPOFNA164BVT3JYZWDUBK", X_train, y_train)
