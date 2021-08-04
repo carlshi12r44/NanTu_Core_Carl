@@ -13,6 +13,8 @@ import logging
 import pathlib
 from sklearn import metrics
 from sklearn.metrics import average_precision_score, mean_squared_error, r2_score
+import inspect
+from util import _log_pretraining_metadata, _log_posttraining_metadata
 
 _logger = logging.getLogger(__name__)
 
@@ -56,7 +58,34 @@ def _get_runtime_version():
     except Exception as e:
         _logger.warning("Please set env variable 'DSP_RUNTIME_VERSION'. Acceptable values are 'python-3.7', 'python-3.8' and 'python-3.9'.")
         return
+"""Old handler version"""
+# def handler(func, *args, **kwargs):
+#     """
+#     handler for intercepting functions
+    
+#     Args:
+#         func: function for intercept
+#         *args: arguments
+#         **kwargs: key arguments
+#     Returns:
+#         model_parameters: the parameters the model used 
+#         model_hyper_paramters: hyper parameters the model used 
 
+#         TODO 07/29/2021
+#         1. 参考 _get_args_for_score in mlflow/sklearn  和 _log_specialized_estimator_content in mlflow/sklearn 来算metrics
+#         2. 参考 _get_estimator_info_tags in line 806 mlflow/sklearn 
+#     """
+#     model = func(*args, **kwargs)
+#     model_parameters = {}
+#     for key, value in model.__dict__.items():
+#         if key.endswith('_'):
+#             model_parameters[key] = value
+#     model_hyper_parameters = model.get_params()
+#     print(f"in intercepts I am receiving the parameters from model {model} as {model_parameters}")
+#     print(f"in intercepts I am receiving the hyper parameters from model {model} as {model_hyper_parameters}")
+    
+#     return model_parameters, model_hyper_parameters
+"""New handler version"""
 def handler(func, *args, **kwargs):
     """
     handler for intercepting functions
@@ -68,18 +97,16 @@ def handler(func, *args, **kwargs):
     Returns:
         model_parameters: the parameters the model used 
         model_hyper_paramters: hyper parameters the model used 
+
+        TODO 07/29/2021
+        1. 参考 _get_args_for_score in mlflow/sklearn  和 _log_specialized_estimator_content in mlflow/sklearn 来算metrics
+        2. 参考 _get_estimator_info_tags in line 806 mlflow/sklearn 
     """
     model = func(*args, **kwargs)
-    model_parameters = {}
-    for key, value in model.__dict__.items():
-        if key.endswith('_'):
-            model_parameters[key] = value
-    model_hyper_parameters = model.get_params()
-    print(f"in intercepts I am receiving the parameters from model {model} as {model_parameters}")
-    print(f"in intercepts I am receiving the hyper parameters from model {model} as {model_hyper_parameters}")
+    model_parameters = _log_pretraining_metadata(model)
     
-    
-    return model_parameters, model_hyper_parameters
+    return model_parameters
+
 def _preprocess(dict):
     """
     preprocess paramters
@@ -150,15 +177,11 @@ if __name__=="__main__":
     regr = linear_model.LinearRegression()
     # register through intercepts 
     intercepts.register(regr.fit, handler)
-    # Train the model using the training sets
-    model_parameters, model_hyper_parameters = regr.fit(diabetes_X_train, diabetes_y_train)
-    # predict using test set
-    diabetes_y_pred = regr.predict(diabetes_X_test)
-    # classification report for the metrics
-    _metrics = {"mean_square_error": mean_squared_error(diabetes_y_test,diabetes_y_pred), "r2_score":r2_score(diabetes_y_test, diabetes_y_pred)}
-
+    # Train the model using the training sets (New Handler version)
+    model_parameters = regr.fit(diabetes_X_train, diabetes_y_train)
+    # metrics after training
+    _metrics = _log_posttraining_metadata(regr, diabetes_X_train, diabetes_y_train)
     # make the post request (See createExperimentV1) TODO
     _send_model_to_ntcore(regr, os.environ["FRAMEWORK"], model_parameters, _metrics)
-
-    # unregister functions
+ 
     intercepts.unregister_all()
